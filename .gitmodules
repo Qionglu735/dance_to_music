@@ -1,0 +1,3 @@
+[submodule "buttplug-py"]
+	path = buttplug-py
+	url = git@github.com:Siege-Wizard/buttplug-py.git

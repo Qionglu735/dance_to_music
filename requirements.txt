@@ -1,0 +1,4 @@
+keyboard==0.13.5
+numpy==1.24.2
+sounddevice==0.4.5
+websockets==10.4
