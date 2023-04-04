@@ -2,6 +2,7 @@
 import asyncio
 import importlib
 import logging
+import math
 import sys
 import threading
 import traceback
@@ -16,7 +17,9 @@ ProtocolSpec = buttplug.ProtocolSpec
 WebsocketConnector = buttplug.WebsocketConnector
 
 threshold = 0.4
-threshold_adj = 0.0
+threshold_adj = 0.6
+norm_size = 100
+norm_size_adj = 8
 
 
 class SoundThread(threading.Thread):
@@ -32,13 +35,20 @@ class SoundThread(threading.Thread):
     def run(self):
         # print(sd.query_devices())
         _out, _in = -1, -1
-        for i in sd.query_devices():
-            if _out < 0 and "CABLE Output (VB-Audio Virtual" in i["name"]:
-                print(i)
+        device_list = sd.query_devices()
+        for i in device_list:
+            # print(i)
+            # if _out < 0 and "CABLE Output (VB-Audio Virtual" in i["name"]:
+            if _out < 0 and "VoiceMeeter Output (VB-Audio VoiceMeeter VAIO)" in i["name"]:
+                print(i["index"], i["name"])
                 _out = i["index"]
-            if _in < 0 and "CABLE Input (VB-Audio Virtual" in i["name"]:
-                print(i)
+            if _in < 0 and "VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)" in i["name"]:
+                print(i["index"], i["name"])
                 _in = i["index"]
+        if _out == -1 or _in == -1:
+            print("VB-Audio Not Found")
+            return
+
         while not self._stop_event.is_set():
             with sd.Stream(device=[_out, _in], callback=self.print_sound):
                 sd.sleep(100)
@@ -51,82 +61,109 @@ sound_thread = SoundThread()
 
 
 async def main():
-    client = Client("Music Vibrator", ProtocolSpec.v3)
-    connector = WebsocketConnector("ws://127.0.0.1:12345", logger=client.logger)
-
-    try:
-        await client.connect(connector)
-    except Exception:
-        traceback.print_exc()
-        return
-
-    await client.start_scanning()
-    await asyncio.sleep(1)
-    await client.stop_scanning()
-
-    client.logger.info(f"Devices: {client.devices}")
-    if len(client.devices) == 0:
-        return
 
     global sound_thread
     sound_thread.start()
 
-    for i in [
-        (1.0, 0.1, ),
-        (0, 0.1, ),
-        (1.0, 0.1, ),
-        (0, 0.1, ),
-        (1.0, 0.1, ),
-        (0, 1, ),
-    ]:
-        await client.devices[0].actuators[0].command(i[0])
-        await asyncio.sleep(i[1])
+    global threshold
 
     norm_list = list()
-    norm_size = 1000
-
-    global threshold
     while sound_thread.is_alive():
-        volume_norm = sound_thread.volume_norm
+        try:
+            client = Client("Music Vibrator", ProtocolSpec.v3)
+            connector = WebsocketConnector("ws://127.0.0.1:12345", logger=client.logger)
+            await client.connect(connector)
 
-        if len(norm_list) >= norm_size:
-            norm_list = norm_list[len(norm_list) - norm_size + 1:]
-        if volume_norm >= 0.1:
-            norm_list.append(volume_norm)
-        if len(norm_list) == 0:
+        except Exception:
+            print("Exception: client.connect()")
+            traceback.print_exc()
             continue
 
-        threshold = max(0.1, round(sum(norm_list) / len(norm_list) + threshold_adj, 2))
-        vibrate = float(1 - 1 / (max(volume_norm - threshold, 0) * 5 + 1))
+        await client.start_scanning()
+        print("Scanning ...")
+        await asyncio.sleep(3)
 
-        sys.stdout.write(
-            f"\r"
-            f"Threshold: {threshold}({threshold_adj}) "
-            f"Volume: {round(float(volume_norm), 2)} "
-            # f"Vibrate: {round((volume_norm - threshold) / (max(norm_list) + 0.01 - threshold), 2)} "
-            f"Vibrate: {round(vibrate, 2)} "
-            # f"{round(sum(norm_list), 2)}/{len(norm_list)}={round(sum(norm_list) / len(norm_list), 2)}"
-        )
-        try:
-            await client.devices[0].actuators[0].command(min(1.0, vibrate))
-        except Exception:
-            sound_thread.stop()
-            break
+        print(f"Devices: {client.devices}")
+        if len(client.devices) == 0:
+            await client.stop_scanning()
+            await asyncio.sleep(3)
+            await client.disconnect()
+            await asyncio.sleep(3)
+            continue
+
+        device_index = -1
+        for i in client.devices:
+            # print(client.devices[i].__dict__)
+            if "Roselex" in client.devices[i].name:
+                device_index = i
+        if device_index == -1:
+            await client.stop_scanning()
+            await asyncio.sleep(3)
+            await client.disconnect()
+            await asyncio.sleep(3)
+            continue
+
+        for i in [
+            (1.0, 0.1, ),
+            (0, 0.1, ),
+            (1.0, 0.1, ),
+            (0, 0.1, ),
+            (1.0, 0.1, ),
+            (0, 0.1, ),
+        ]:
+            await client.devices[device_index].actuators[0].command(i[0])
+            await asyncio.sleep(i[1])
+        while sound_thread.is_alive():
+            volume_norm = sound_thread.volume_norm
+
+            if len(norm_list) >= norm_size * norm_size_adj:
+                norm_list = norm_list[len(norm_list) - norm_size * norm_size_adj + 1:]
+            if volume_norm >= 0.1:
+                norm_list.append(volume_norm)
+            if len(norm_list) == 0:
+                # print("len(norm_list) == 0 continue")
+                continue
+
+            threshold = max(0.1, round(sum(norm_list) / len(norm_list) * 2 * threshold_adj, 2))
+            vibrate = float(1 - 1 / (max(volume_norm - threshold, 0) + 1))
+
+            sys.stdout.write(
+                f"\r"
+                f"Volume: {round(float(volume_norm), 2)}/{threshold}({threshold_adj}) "
+                f"Vibrate: {round(vibrate, 2)} "
+                f"Sample: {len(norm_list)}/{norm_size * norm_size_adj} "
+                # f"Vibrate: {round((volume_norm - threshold) / (max(norm_list) + 0.01 - threshold), 2)} "
+                # f"{round(sum(norm_list), 2)}/{len(norm_list)}={round(sum(norm_list) / len(norm_list), 2)}"
+            )
+            try:
+                await client.devices[device_index].actuators[0].command(min(1.0, vibrate))
+            except Exception:
+                print("Exception: actuators.command()")
+                traceback.print_exc()
+                break
+
+        await client.disconnect()
+        await asyncio.sleep(3)
 
     sound_thread.join()
-
-    await client.disconnect()
 
 
 def keyboard_handler(event):
     global threshold_adj
+    global norm_size_adj
     if event.name in ["up", "w"]:
         threshold_adj = min(2.0, round(threshold_adj + 0.01, 2))
         # print(threshold)
     elif event.name in ["down", "s"]:
         threshold_adj = max(-2.0, round(threshold_adj - 0.01, 2))
         # print(threshold)
-    elif event.name in ["space"]:
+    elif event.name in ["left", "a"]:
+        norm_size_adj = max(1, math.floor(norm_size_adj / 2))
+        # print(threshold)
+    elif event.name in ["right", "d"]:
+        norm_size_adj = norm_size_adj * 2
+        # print(threshold)
+    elif event.name in ["esc"]:
         global sound_thread
         sound_thread.stop()
 
