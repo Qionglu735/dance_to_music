@@ -27,14 +27,14 @@ class SoundThread(threading.Thread):
         super(SoundThread, self).__init__()
         self._stop_event = threading.Event()
         self.volume_norm = 0
-        self.pitch_o = aubio.pitch("default", buf_size=512, hop_size=512, samplerate=44100)
-        self.pitch_o.set_unit("midi")
-        self.pitch_o.set_tolerance(0.8)
-        self.pitch = 0
+        # self.pitch_o = aubio.pitch("default", buf_size=512, hop_size=512, samplerate=44100)
+        # self.pitch_o.set_unit("midi")
+        # self.pitch_o.set_tolerance(0.8)
+        # self.pitch = 0
 
     def print_sound(self, indata, outdata, frames, time, status):
         self.volume_norm = np.linalg.norm(indata)
-        self.pitch = self.pitch_o(indata[:, 0])[0]
+        # self.pitch = self.pitch_o(indata[:, 0])[0]
         # print(f"{volume_norm}")
 
     def run(self):
@@ -119,7 +119,7 @@ async def main():
             await asyncio.sleep(i[1])
         while sound_thread.is_alive():
             volume = sound_thread.volume_norm
-            pitch = sound_thread.pitch
+            # pitch = sound_thread.pitch
 
             if volume >= 0.01:
                 volume_list.append(volume)
@@ -129,10 +129,10 @@ async def main():
                 # print("len(volume_list) == 0 continue")
                 continue
 
-            if volume >= 0.01:
-                pitch_list.append(pitch)
-            if len(pitch_list) > sample_size * sample_size_adj:
-                pitch_list = pitch_list[len(pitch_list) - sample_size * sample_size_adj:]
+            # if volume >= 0.01:
+            #     pitch_list.append(pitch)
+            # if len(pitch_list) > sample_size * sample_size_adj:
+            #     pitch_list = pitch_list[len(pitch_list) - sample_size * sample_size_adj:]
 
             # volume_threshold = max(0.01, round(sum(volume_list) / len(volume_list) * 2 * threshold_adj, 2))
             # average of volume
