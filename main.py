@@ -17,9 +17,9 @@ Client = buttplug.Client
 ProtocolSpec = buttplug.ProtocolSpec
 WebsocketConnector = buttplug.WebsocketConnector
 
-threshold_adj = 0.08
+threshold_adj = 0.32
 sample_size = 100
-sample_size_adj = 2
+sample_size_adj = 32
 
 
 class SoundThread(threading.Thread):
@@ -35,7 +35,7 @@ class SoundThread(threading.Thread):
     def print_sound(self, indata, outdata, frames, time, status):
         self.volume_norm = np.linalg.norm(indata)
         # self.pitch = self.pitch_o(indata[:, 0])[0]
-        # print(f"{volume_norm}")
+        # print(f"{self.volume_norm}")
 
     def run(self):
         # print(sd.query_devices())
@@ -50,6 +50,7 @@ class SoundThread(threading.Thread):
             if _in < 0 and "VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)" in i["name"]:
                 print(i["index"], i["name"])
                 _in = i["index"]
+            # print(_in, _out)
         if _out == -1 or _in == -1:
             print("VB-Audio Not Found")
             return
@@ -118,15 +119,15 @@ async def main():
             await client.devices[device_index].actuators[0].command(i[0])
             await asyncio.sleep(i[1])
         while sound_thread.is_alive():
-            volume = sound_thread.volume_norm
+            volume = sound_thread.volume_norm * 100
             # pitch = sound_thread.pitch
 
-            if volume >= 0.01:
+            if volume >= 0.0001:
                 volume_list.append(volume)
             if len(volume_list) > sample_size * sample_size_adj:
                 volume_list = volume_list[len(volume_list) - sample_size * sample_size_adj:]
             if len(volume_list) == 0:
-                # print("len(volume_list) == 0 continue")
+                print("len(volume_list) == 0 continue")
                 continue
 
             # if volume >= 0.01:
@@ -137,10 +138,10 @@ async def main():
             # volume_threshold = max(0.01, round(sum(volume_list) / len(volume_list) * 2 * threshold_adj, 2))
             # average of volume
             volume_avg = sum(volume_list) / len(volume_list)
-            volume_avg = max(0.01, round(volume_avg, 2))
+            volume_avg = max(0.0001, round(volume_avg, 4))
             # average of volume * adj
             volume_avg_adj = sum(volume_list) / len(volume_list) * (1 + threshold_adj)
-            volume_avg_adj = max(0.01, round(volume_avg_adj, 2))
+            volume_avg_adj = max(0.0001, round(volume_avg_adj, 4))
             # # distance between min and max value * adj
             # volume_dis_adj = min(volume_list) + (max(volume_list) - min(volume_list)) * (0.5 + threshold_adj)
             # volume_dis_adj = max(0.01, round(volume_dis_adj, 2))
@@ -187,7 +188,7 @@ async def main():
             sys.stdout.write(
                 f"\r"
                 f"[{display}] "
-                f"Volume: {round(float(volume), 2)}/{volume_avg} ({threshold_adj}) "
+                f"Volume: {round(float(volume), 4)}/{volume_avg} ({threshold_adj}) "
                 # f"Pitch: {round(float(pitch), 2)}/{pitch_avg}/{pitch_dis_adj} ({threshold_adj}) "
                 f"Vibrate: {round(vibrate, 2)} "
                 f"Sample: {len(volume_list)}/{sample_size * sample_size_adj} "
@@ -221,7 +222,7 @@ def keyboard_handler(event):
     elif event.name in ["right", "d"]:
         sample_size_adj = sample_size_adj * 2
         # print(threshold)
-    elif event.name in ["esc"]:
+    elif event.name in ["esc", "space"]:
         global sound_thread
         sound_thread.stop()
 
